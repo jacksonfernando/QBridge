@@ -19,7 +19,15 @@ AI Agent  →  qbridge query --profile readonly "SELECT ..."  →  QBridge  → 
 
 ## Installation
 
-### Build from source (requires Go 1.21+)
+### go install (requires Go 1.21+ with CGo enabled)
+
+```bash
+go install github.com/jacksonfernando/qbridge@latest
+```
+
+> **Note:** QBridge uses `go-sqlite3` which requires CGo. Make sure you have a C compiler (`gcc` / `clang`) available. On macOS this comes with Xcode Command Line Tools (`xcode-select --install`); on Linux install `build-essential`.
+
+### Build from source
 
 ```bash
 git clone https://github.com/jacksonfernando/qbridge

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -22,47 +23,7 @@ var dbAddCmd = &cobra.Command{
 	Short: "Register a new database credential",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := mustLoadStore()
-		name := args[0]
-
-		dbEntry := config.Database{Name: name}
-
-		// Choose type.
-		dbEntry.Type = config.DBType(mustChoose("Database type", []string{"postgres", "mysql", "sqlite"}))
-
-		if dbEntry.Type == config.DBTypeSQLite {
-			dbEntry.FilePath = mustPrompt("File path")
-		} else {
-			dbEntry.Host = mustPrompt("Host")
-			portStr := mustPromptDefault("Port", defaultPort(dbEntry.Type))
-			port, err := strconv.Atoi(portStr)
-			if err != nil {
-				return fmt.Errorf("invalid port: %w", err)
-			}
-			dbEntry.Port = port
-			dbEntry.User = mustPrompt("Username")
-			fmt.Print("Password: ")
-			pw, err := readPassword()
-			if err != nil {
-				return err
-			}
-			fmt.Println()
-			dbEntry.Password = pw
-			dbEntry.DBName = mustPrompt("Database name")
-
-			if dbEntry.Type == config.DBTypePostgres {
-				dbEntry.SSLMode = mustPromptDefault("SSL mode (disable/require/prefer/verify-full)", "prefer")
-			}
-		}
-
-		if err := s.AddDB(dbEntry); err != nil {
-			return err
-		}
-		if err := s.Save(); err != nil {
-			return fmt.Errorf("failed to save: %w", err)
-		}
-		fmt.Printf("✓ Database %q registered.\n", name)
-		return nil
+		return RunDBAdd(mustLoadStore(), args[0], os.Stdin, os.Stdout)
 	},
 }
 
@@ -70,25 +31,7 @@ var dbListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List registered databases",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := mustLoadStore()
-		if len(s.Config.Databases) == 0 {
-			fmt.Println("No databases registered. Run: qbridge db add <name>")
-			return nil
-		}
-		table := tablewriter.NewWriter(os.Stdout)
-		table.Header([]string{"Name", "Type", "Host / Path", "Port", "User", "Database"})
-		for _, d := range s.Config.Databases {
-			host := d.Host
-			port := ""
-			if d.Type == config.DBTypeSQLite {
-				host = d.FilePath
-			} else {
-				port = strconv.Itoa(d.Port)
-			}
-			table.Append([]string{d.Name, string(d.Type), host, port, d.User, d.DBName})
-		}
-		table.Render()
-		return nil
+		return RunDBList(mustLoadStore(), os.Stdout)
 	},
 }
 
@@ -97,28 +40,7 @@ var dbRemoveCmd = &cobra.Command{
 	Short: "Remove a registered database credential",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := mustLoadStore()
-		if err := s.RemoveDB(args[0]); err != nil {
-			return err
-		}
-
-		// Also clean up any profile references.
-		for i := range s.Config.Profiles {
-			p := &s.Config.Profiles[i]
-			filtered := p.Databases[:0]
-			for _, d := range p.Databases {
-				if d != args[0] {
-					filtered = append(filtered, d)
-				}
-			}
-			p.Databases = filtered
-		}
-
-		if err := s.Save(); err != nil {
-			return fmt.Errorf("failed to save: %w", err)
-		}
-		fmt.Printf("✓ Database %q removed.\n", args[0])
-		return nil
+		return RunDBRemove(mustLoadStore(), args[0], os.Stdout)
 	},
 }
 
@@ -127,19 +49,7 @@ var dbTestCmd = &cobra.Command{
 	Short: "Test connectivity to a registered database",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := mustLoadStore()
-		d, err := s.GetDB(args[0])
-		if err != nil {
-			return err
-		}
-		fmt.Printf("Connecting to %q (%s)...\n", d.Name, d.Type)
-		conn, err := db.Connect(d)
-		if err != nil {
-			return fmt.Errorf("✗ Connection failed: %w", err)
-		}
-		conn.Close()
-		fmt.Println("✓ Connection successful.")
-		return nil
+		return RunDBTest(mustLoadStore(), args[0], dbConnect, os.Stdout)
 	},
 }
 
@@ -150,9 +60,128 @@ func init() {
 	dbCmd.AddCommand(dbTestCmd)
 }
 
+// runDBAdd contains the testable core of the db add command.
+func RunDBAdd(s config.Storer, name string, in io.Reader, out io.Writer) error {
+	dbEntry := config.Database{Name: name}
+
+	dbEntry.Type = config.DBType(PromptChoose(out, in, "Database type", []string{"postgres", "mysql", "sqlite"}))
+
+	if dbEntry.Type == config.DBTypeSQLite {
+		dbEntry.FilePath = PromptValue(out, in, "File path", "")
+	} else {
+		dbEntry.Host = PromptValue(out, in, "Host", "")
+		portStr := PromptValue(out, in, fmt.Sprintf("Port [%s]", DefaultPort(dbEntry.Type)), DefaultPort(dbEntry.Type))
+		if portStr == "" {
+			portStr = DefaultPort(dbEntry.Type)
+		}
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return fmt.Errorf("invalid port: %w", err)
+		}
+		dbEntry.Port = port
+		dbEntry.User = PromptValue(out, in, "Username", "")
+		fmt.Fprint(out, "Password: ")
+		pw, err := ReadPasswordFrom(in)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out)
+		dbEntry.Password = pw
+		dbEntry.DBName = PromptValue(out, in, "Database name", "")
+
+		if dbEntry.Type == config.DBTypePostgres {
+			dbEntry.SSLMode = PromptValue(out, in, "SSL mode (disable/require/prefer/verify-full) [prefer]", "prefer")
+			if dbEntry.SSLMode == "" {
+				dbEntry.SSLMode = "prefer"
+			}
+		}
+	}
+
+	if err := s.AddDB(dbEntry); err != nil {
+		return err
+	}
+	if err := s.Save(); err != nil {
+		return fmt.Errorf("failed to save: %w", err)
+	}
+	fmt.Fprintf(out, "✓ Database %q registered.\n", name)
+	return nil
+}
+
+// runDBList contains the testable core of the db list command.
+func RunDBList(s config.Storer, out io.Writer) error {
+	dbs := s.GetDatabases()
+	if len(dbs) == 0 {
+		fmt.Fprintln(out, "No databases registered. Run: qbridge db add <name>")
+		return nil
+	}
+	table := tablewriter.NewWriter(out)
+	table.Header([]string{"Name", "Type", "Host / Path", "Port", "User", "Database"})
+	for _, d := range dbs {
+		host := d.Host
+		port := ""
+		if d.Type == config.DBTypeSQLite {
+			host = d.FilePath
+		} else {
+			port = strconv.Itoa(d.Port)
+		}
+		table.Append([]string{d.Name, string(d.Type), host, port, d.User, d.DBName})
+	}
+	table.Render()
+	return nil
+}
+
+// ConnectFn is a function type matching db.Connect so it can be swapped in tests.
+type ConnectFn func(d *config.Database) (DBConn, error)
+
+// DBConn is the minimal interface of *sql.DB used by runDBTest.
+type DBConn interface {
+	Close() error
+}
+
+// runDBRemove contains the testable core of the db remove command.
+func RunDBRemove(s config.Storer, name string, out io.Writer) error {
+	if err := s.RemoveDB(name); err != nil {
+		return err
+	}
+
+	// Clean up profile references.
+	for _, p := range s.GetProfiles() {
+		filtered := p.Databases[:0]
+		for _, d := range p.Databases {
+			if d != name {
+				filtered = append(filtered, d)
+			}
+		}
+		p.Databases = filtered
+		_ = s.UpdateProfile(p)
+	}
+
+	if err := s.Save(); err != nil {
+		return fmt.Errorf("failed to save: %w", err)
+	}
+	fmt.Fprintf(out, "✓ Database %q removed.\n", name)
+	return nil
+}
+
+// runDBTest contains the testable core of the db test command.
+func RunDBTest(s config.Storer, name string, connect ConnectFn, out io.Writer) error {
+	d, err := s.GetDB(name)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Connecting to %q (%s)...\n", d.Name, d.Type)
+	conn, err := connect(d)
+	if err != nil {
+		return fmt.Errorf("✗ Connection failed: %w", err)
+	}
+	conn.Close()
+	fmt.Fprintln(out, "✓ Connection successful.")
+	return nil
+}
+
 // --- helpers ---
 
-func defaultPort(t config.DBType) string {
+func DefaultPort(t config.DBType) string {
 	switch t {
 	case config.DBTypePostgres:
 		return "5432"
@@ -162,17 +191,11 @@ func defaultPort(t config.DBType) string {
 	return ""
 }
 
-func mustPrompt(label string) string {
-	fmt.Printf("%s: ", label)
+// promptValue prints a label to out, reads one token from in, and falls back to def if empty.
+func PromptValue(out io.Writer, in io.Reader, label, def string) string {
+	fmt.Fprintf(out, "%s: ", label)
 	var val string
-	fmt.Fscan(os.Stdin, &val)
-	return strings.TrimSpace(val)
-}
-
-func mustPromptDefault(label, def string) string {
-	fmt.Printf("%s [%s]: ", label, def)
-	var val string
-	fmt.Fscan(os.Stdin, &val)
+	fmt.Fscan(in, &val)
 	val = strings.TrimSpace(val)
 	if val == "" {
 		return def
@@ -180,17 +203,34 @@ func mustPromptDefault(label, def string) string {
 	return val
 }
 
-func mustChoose(label string, options []string) string {
+// promptChoose loops until the user enters one of options.
+func PromptChoose(out io.Writer, in io.Reader, label string, options []string) string {
 	for {
-		fmt.Printf("%s (%s): ", label, strings.Join(options, "/"))
+		fmt.Fprintf(out, "%s (%s): ", label, strings.Join(options, "/"))
 		var val string
-		fmt.Fscan(os.Stdin, &val)
+		fmt.Fscan(in, &val)
 		val = strings.ToLower(strings.TrimSpace(val))
 		for _, o := range options {
 			if val == o {
 				return val
 			}
 		}
-		fmt.Printf("  Please choose one of: %s\n", strings.Join(options, ", "))
+		fmt.Fprintf(out, "  Please choose one of: %s\n", strings.Join(options, ", "))
 	}
 }
+
+// readPasswordFrom reads a password from r without echo (falls back to plain read for non-TTY).
+func ReadPasswordFrom(r io.Reader) (string, error) {
+	if r == os.Stdin {
+		return readPassword()
+	}
+	var pw string
+	_, err := fmt.Fscan(r, &pw)
+	return strings.TrimSpace(pw), err
+}
+
+// dbConnect wraps db.Connect to satisfy ConnectFn signature.
+func dbConnect(d *config.Database) (DBConn, error) {
+	return db.Connect(d)
+}
+

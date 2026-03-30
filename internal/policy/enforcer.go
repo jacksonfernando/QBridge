@@ -7,18 +7,18 @@ import (
 	"github.com/jacksonfernando/qbridge/internal/config"
 )
 
-// statementPrefixes maps SQL keywords to their Operation class.
+// statementPrefixes maps SQL keywords to their granular Operation.
 var statementPrefixes = map[string]config.Operation{
-	"SELECT": config.OpSelect,
-	"WITH":   config.OpSelect, // CTEs that read
-	"INSERT": config.OpInsert,
-	"UPDATE": config.OpUpdate,
-	"DELETE": config.OpDelete,
-	"CREATE": config.OpDDL,
-	"DROP":   config.OpDDL,
-	"ALTER":  config.OpDDL,
-	"RENAME": config.OpDDL,
-	"TRUNCATE": config.OpDDL,
+	"SELECT":   config.OpSelect,
+	"WITH":     config.OpSelect, // CTEs that read
+	"INSERT":   config.OpInsert,
+	"UPDATE":   config.OpUpdate,
+	"DELETE":   config.OpDelete,
+	"CREATE":   config.OpCreate,
+	"DROP":     config.OpDrop,
+	"ALTER":    config.OpAlter,
+	"RENAME":   config.OpRename,
+	"TRUNCATE": config.OpTruncate,
 }
 
 // ClassifySQL returns the Operation class for a given SQL statement.

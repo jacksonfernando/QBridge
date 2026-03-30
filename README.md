@@ -11,7 +11,7 @@ AI Agent  →  qbridge query --profile readonly "SELECT ..."  →  QBridge  → 
 
 - 🔐 **Encrypted credential storage** — AES-256-GCM with Argon2id key derivation (`~/.qbridge/`)
 - 🗄️ **Multi-database support** — PostgreSQL, MySQL, SQLite
-- 👤 **Profiles** — bind databases to operation allowlists (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `DDL`)
+- 👤 **Profiles** — bind databases to individually selected operations (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `DROP`, `ALTER`, `RENAME`, `TRUNCATE`)
 - 🤖 **AI-agent friendly** — JSON output, `QBRIDGE_PASSWORD` env var for non-interactive use
 - 🛡️ **Policy enforcement** — SQL intent is parsed (not string-matched) to prevent bypass
 
@@ -68,7 +68,7 @@ qbridge db add prod-postgres
 qbridge profile add readonly
 # Available databases: prod-postgres
 # Databases to include (comma-separated): prod-postgres
-# Allowed operations — choices: SELECT, INSERT, UPDATE, DELETE, DDL
+# Allowed operations — choices: SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, RENAME, TRUNCATE
 # Allow (comma-separated): SELECT
 # ✓ Profile "readonly" created.
 ```
@@ -171,7 +171,7 @@ qbridge profile add analyst
 qbridge query --profile analyst --db analytics-mysql "SELECT * FROM daily_stats"
 ```
 
-### Example: Write-allowed profile (no DDL)
+### Example: Write-allowed profile (no schema changes)
 
 ```bash
 qbridge profile add app-writer
@@ -192,10 +192,16 @@ qbridge profile add app-writer
 
 ## Supported Operations
 
-| Operation | Covers |
+Operations are individually selectable when creating or editing a profile.
+
+| Operation | SQL statement |
 |---|---|
 | `SELECT` | `SELECT`, `WITH` (CTEs) |
 | `INSERT` | `INSERT` |
 | `UPDATE` | `UPDATE` |
 | `DELETE` | `DELETE` |
-| `DDL` | `CREATE`, `DROP`, `ALTER`, `RENAME`, `TRUNCATE` |
+| `CREATE` | `CREATE TABLE / VIEW / INDEX / …` |
+| `DROP` | `DROP TABLE / VIEW / INDEX / …` |
+| `ALTER` | `ALTER TABLE / VIEW / …` |
+| `RENAME` | `RENAME TABLE / …` |
+| `TRUNCATE` | `TRUNCATE TABLE` |

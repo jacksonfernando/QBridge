@@ -27,15 +27,25 @@ const (
 type Operation string
 
 const (
+	// DML
 	OpSelect Operation = "SELECT"
 	OpInsert Operation = "INSERT"
 	OpUpdate Operation = "UPDATE"
 	OpDelete Operation = "DELETE"
-	OpDDL    Operation = "DDL"
+
+	// DDL
+	OpCreate   Operation = "CREATE"
+	OpDrop     Operation = "DROP"
+	OpAlter    Operation = "ALTER"
+	OpRename   Operation = "RENAME"
+	OpTruncate Operation = "TRUNCATE"
 )
 
-// AllOperations contains all valid operation values.
-var AllOperations = []Operation{OpSelect, OpInsert, OpUpdate, OpDelete, OpDDL}
+// AllOperations contains all valid operation values in display order.
+var AllOperations = []Operation{
+	OpSelect, OpInsert, OpUpdate, OpDelete,
+	OpCreate, OpDrop, OpAlter, OpRename, OpTruncate,
+}
 
 // Database holds connection details for a registered database.
 type Database struct {

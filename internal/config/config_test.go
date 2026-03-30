@@ -82,7 +82,7 @@ func TestLoad_EmptyStore_HasSlices(t *testing.T) {
 // --- ValidateOperation ---
 
 func TestValidateOperation_Valid(t *testing.T) {
-	for _, op := range []string{"SELECT", "INSERT", "UPDATE", "DELETE", "DDL"} {
+	for _, op := range []string{"SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER", "RENAME", "TRUNCATE"} {
 		got, err := config.ValidateOperation(op)
 		assert.NoError(t, err, op)
 		assert.Equal(t, config.Operation(op), got)
@@ -90,7 +90,7 @@ func TestValidateOperation_Valid(t *testing.T) {
 }
 
 func TestValidateOperation_Invalid(t *testing.T) {
-	_, err := config.ValidateOperation("TRUNCATE")
+	_, err := config.ValidateOperation("EXPLAIN")
 	assert.Error(t, err)
 }
 

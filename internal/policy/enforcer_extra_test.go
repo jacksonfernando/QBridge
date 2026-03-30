@@ -44,13 +44,13 @@ func TestClassifySQL_MixedCommentStyles(t *testing.T) {
 func TestClassifySQL_RENAME(t *testing.T) {
 	op, err := policy.ClassifySQL("RENAME TABLE old TO new")
 	require.NoError(t, err)
-	assert.Equal(t, "DDL", string(op))
+	assert.Equal(t, "RENAME", string(op))
 }
 
 func TestClassifySQL_TRUNCATE(t *testing.T) {
 	op, err := policy.ClassifySQL("TRUNCATE TABLE users")
 	require.NoError(t, err)
-	assert.Equal(t, "DDL", string(op))
+	assert.Equal(t, "TRUNCATE", string(op))
 }
 
 // --- Check propagates ClassifySQL error ---
